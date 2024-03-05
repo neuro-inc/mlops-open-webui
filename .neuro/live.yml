@@ -1,0 +1,50 @@
+kind: live
+title: My flow
+
+defaults:
+  life_span: 1d
+
+images:
+  ollama_public:
+    ref: ollama/ollama
+  open_webui:
+    ref: image:${{ project.project_name }}/$[[ flow.project_id ]]/openwebui
+    context: ${{ flow.workspace }}/
+    dockerfile: ${{ flow.workspace }}/Dockerfile
+
+volumes:
+  data:
+    remote: storage:/$[[ project.project_name ]]/$[[ flow.project_id ]]/data
+    mount: /root/.ollama
+    local: data
+  webdata:
+    remote: storage:/$[[ project.project_name ]]/$[[ flow.project_id ]]/web
+    mount: /app/backend/data
+    local: webdata
+
+jobs:
+  ollama_bash:
+    image: $[[ images.ollama_public.ref ]]
+    life_span: 1d
+    volumes:
+      - $[[ volumes.data.ref_ro ]]
+    entrypoint: bash
+
+  ollama_worker:
+    image: $[[ images.ollama_public.ref ]]
+    life_span: 10d
+    detach: true
+    preset: gpu-small
+    volumes:
+      - $[[ volumes.data.ref_rw ]]
+
+  web:
+    image: ${{ images.open_webui.ref }}
+    volumes:
+      - ${{ volumes.webdata.ref_rw }}
+    http_port: 8080
+    preset: cpu-small
+    detach: true
+    env:
+      OLLAMA_API_BASE_URL: http://${{ inspect_job('ollama_worker').internal_hostname_named }}:11434/api
+      WEBUI_SECRET_KEY: "neuro"
