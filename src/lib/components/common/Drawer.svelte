@@ -6,22 +6,10 @@
 	const dispatch = createEventDispatcher();
 
 	export let show = false;
-	export let size = 'md';
+	export let className = '';
 
 	let modalElement = null;
 	let mounted = false;
-
-	const sizeToWidth = (size) => {
-		if (size === 'xs') {
-			return 'w-[16rem]';
-		} else if (size === 'sm') {
-			return 'w-[30rem]';
-		} else if (size === 'md') {
-			return 'w-[48rem]';
-		} else {
-			return 'w-[56rem]';
-		}
-	};
 
 	const handleKeyDown = (event: KeyboardEvent) => {
 		if (event.key === 'Escape' && isTopModal()) {
@@ -69,14 +57,14 @@
 
 <div
 	bind:this={modalElement}
-	class="modal fixed right-0 left-0 bottom-0 bg-black/60 w-full h-screen max-h-[100dvh] flex justify-center z-[9999] overflow-hidden overscroll-contain"
+	class="modal fixed right-0 left-0 bottom-0 bg-black/60 w-full h-screen max-h-[100dvh] flex justify-center z-[999] overflow-hidden overscroll-contain"
 	in:fly={{ y: 100, duration: 100 }}
 	on:mousedown={() => {
 		show = false;
 	}}
 >
 	<div
-		class=" mt-auto max-w-full w-full bg-gray-50 dark:bg-gray-900 max-h-[100dvh] overflow-y-auto scrollbar-hidden"
+		class=" mt-auto max-w-full w-full bg-gray-50 dark:bg-gray-900 dark:text-gray-100 {className} max-h-[100dvh] overflow-y-auto scrollbar-hidden"
 		on:mousedown={(e) => {
 			e.stopPropagation();
 		}}
