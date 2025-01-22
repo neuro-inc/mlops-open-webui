@@ -37,6 +37,8 @@ jobs:
     detach: true
     # preset: gpu-small
     preset: dgx
+    env:
+      OLLAMA_KEEP_ALIVE: -1
     volumes:
       - $[[ volumes.data.ref_rw ]]
 
