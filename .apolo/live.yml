@@ -1,0 +1,67 @@
+kind: live
+title: My flow
+
+defaults:
+  life_span: 1d
+
+images:
+  ollama_public:
+    ref: ollama/ollama
+  open_webui:
+    ref: ghcr.io/open-webui/open-webui:v0.5.4
+
+volumes:
+  data:
+    remote: storage:$[[ flow.project_id ]]/data
+    mount: /root/.ollama
+    local: data
+  webdata:
+    remote: storage:$[[ flow.project_id ]]/web
+    mount: /app/backend/data
+    local: webdata
+  hf_cache:
+    remote: storage:$[[ flow.project_id ]]/cache
+    mount: /root/.cache/huggingface
+
+jobs:
+  ollama_bash:
+    image: $[[ images.ollama_public.ref ]]
+    life_span: 1d
+    volumes:
+      - $[[ volumes.data.ref_ro ]]
+    entrypoint: bash
+
+  ollama_worker:
+    image: $[[ images.ollama_public.ref ]]
+    life_span: 10d
+    detach: true
+    # preset: gpu-small
+    preset: dgx
+    volumes:
+      - $[[ volumes.data.ref_rw ]]
+
+  web:
+    image: ${{ images.open_webui.ref }}
+    volumes:
+      - ${{ volumes.webdata.ref_rw }}
+    http_port: 8080
+    preset: cpu-small
+    detach: true
+    env:
+      OLLAMA_BASE_URL: http://${{ inspect_job('ollama_worker').internal_hostname_named }}:11434
+      # OPENAI_API_BASE_URL: http://${{ inspect_job('vllm').internal_hostname_named }}:8000/v1 # uncomment, if used
+      WEBUI_SECRET_KEY: "apolo"
+
+  vllm:
+    image: vllm/vllm-openai:v0.6.1.post2
+    name: vllm
+    preset: a100x1
+    http_port: "8000"
+    volumes:
+      - ${{ volumes.hf_cache.ref_rw }}
+    env:
+      HF_TOKEN: secret:HF_TOKEN
+    cmd: >
+      --model meta-llama/Meta-Llama-3.1-8B-Instruct
+      --tokenizer meta-llama/Meta-Llama-3.1-8B-Instruct
+      --dtype=half
