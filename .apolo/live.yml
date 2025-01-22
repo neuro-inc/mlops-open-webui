@@ -6,7 +6,7 @@ defaults:
 
 images:
   ollama_public:
-    ref: ollama/ollama
+    ref: ollama/ollama:0.5.7
   open_webui:
     ref: ghcr.io/open-webui/open-webui:v0.5.4
 
@@ -39,6 +39,8 @@ jobs:
     preset: dgx
     env:
       OLLAMA_KEEP_ALIVE: -1
+      OLLAMA_FLASH_ATTENTION: 1
+      OLLAMA_KV_CACHE_TYPE: q4_0
     volumes:
       - $[[ volumes.data.ref_rw ]]
 
