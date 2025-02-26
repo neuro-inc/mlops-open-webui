@@ -14,7 +14,7 @@ volumes:
     mount: /app/backend/data
     local: webdata
   hf_cache:
-    remote: storage:$[[ flow.project_id ]]/cache
+    remote: storage:ollama_server/cache
     mount: /root/.cache/huggingface
 
 jobs:
@@ -41,7 +41,7 @@ jobs:
     browse: true
     env:
       WEBUI_SECRET_KEY: "apolo"
-      OPENAI_API_BASE_URL: http://${{ inspect_job('vllm').internal_hostname_named }}:8000/v1 # inspects vllm job in runtime to derive endpoint domain address
+      OPENAI_API_BASE_URL: http://${{ inspect_job('ray_worker').internal_hostname_named }}:8000/v1 # inspects vllm job in runtime to derive endpoint domain address
 
   vllm:
     image: vllm/vllm-openai:v0.7.2
@@ -75,6 +75,21 @@ jobs:
     entrypoint: ray
     cmd: >
       start --block --head --port=6379 --dashboard-host=0.0.0.0
+
+  ray_extra_worker:
+    image: vllm/vllm-openai:v0.7.2
+    preset: dgx
+    multi: true
+    detach: true
+    http_port: "8000"
+    http_auth: false
+    life_span: 10d
+    volumes:
+      - ${{ volumes.hf_cache.ref_rw }}
+    env:
+      HF_TOKEN: secret:HF_TOKEN
+    cmd: >
+      ray start --address=${{ inspect_job('ray_head').internal_hostname_named }}:6379
 
   ray_worker:
     image: vllm/vllm-openai:v0.7.2
