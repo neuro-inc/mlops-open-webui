@@ -41,7 +41,9 @@ jobs:
     browse: true
     env:
       WEBUI_SECRET_KEY: "apolo"
-      OPENAI_API_BASE_URL: http://${{ inspect_job('ray_worker').internal_hostname_named }}:8000/v1 # inspects vllm job in runtime to derive endpoint domain address
+      OPENAI_API_BASE_URL: http://${{ inspect_job(params.server).internal_hostname_named }}:8000/v1 # inspects vllm job in runtime to derive endpoint domain address
+    params:
+      server: ray_worker
 
   vllm:
     image: vllm/vllm-openai:v0.7.2
