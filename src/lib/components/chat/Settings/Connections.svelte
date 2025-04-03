@@ -1,169 +1,156 @@
 <script lang="ts">
-	import { models, user } from '$lib/stores';
-	import { createEventDispatcher, onMount } from 'svelte';
-	const dispatch = createEventDispatcher();
-
-	import { getOllamaAPIUrl, getOllamaVersion, updateOllamaAPIUrl } from '$lib/apis/ollama';
-	import { getOpenAIKey, getOpenAIUrl, updateOpenAIKey, updateOpenAIUrl } from '$lib/apis/openai';
 	import { toast } from 'svelte-sonner';
+	import { createEventDispatcher, onMount, getContext, tick } from 'svelte';
+	import { getModels as _getModels } from '$lib/apis';
 
-	export let getModels: Function;
+	const dispatch = createEventDispatcher();
+	const i18n = getContext('i18n');
 
-	// External
-	let API_BASE_URL = '';
+	import { models, settings, user } from '$lib/stores';
 
-	let OPENAI_API_KEY = '';
-	let OPENAI_API_BASE_URL = '';
+	import Switch from '$lib/components/common/Switch.svelte';
+	import Spinner from '$lib/components/common/Spinner.svelte';
+	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import Plus from '$lib/components/icons/Plus.svelte';
+	import Connection from './Connections/Connection.svelte';
 
-	let showOpenAI = false;
-	let showLiteLLM = false;
+	import AddConnectionModal from '$lib/components/AddConnectionModal.svelte';
 
-	const updateOpenAIHandler = async () => {
-		OPENAI_API_BASE_URL = await updateOpenAIUrl(localStorage.token, OPENAI_API_BASE_URL);
-		OPENAI_API_KEY = await updateOpenAIKey(localStorage.token, OPENAI_API_KEY);
+	export let saveSettings: Function;
 
-		await models.set(await getModels());
+	let config = null;
+
+	let showConnectionModal = false;
+
+	const addConnectionHandler = async (connection) => {
+		config.OPENAI_API_BASE_URLS.push(connection.url);
+		config.OPENAI_API_KEYS.push(connection.key);
+		config.OPENAI_API_CONFIGS[config.OPENAI_API_BASE_URLS.length - 1] = connection.config;
+
+		await updateHandler();
 	};
 
-	const updateOllamaAPIUrlHandler = async () => {
-		API_BASE_URL = await updateOllamaAPIUrl(localStorage.token, API_BASE_URL);
+	const updateHandler = async () => {
+		// Remove trailing slashes
+		config.OPENAI_API_BASE_URLS = config.OPENAI_API_BASE_URLS.map((url) => url.replace(/\/$/, ''));
 
-		const ollamaVersion = await getOllamaVersion(localStorage.token).catch((error) => {
-			toast.error(error);
-			return null;
-		});
+		// Check if API KEYS length is same than API URLS length
+		if (config.OPENAI_API_KEYS.length !== config.OPENAI_API_BASE_URLS.length) {
+			// if there are more keys than urls, remove the extra keys
+			if (config.OPENAI_API_KEYS.length > config.OPENAI_API_BASE_URLS.length) {
+				config.OPENAI_API_KEYS = config.OPENAI_API_KEYS.slice(
+					0,
+					config.OPENAI_API_BASE_URLS.length
+				);
+			}
 
-		if (ollamaVersion) {
-			toast.success('Server connection verified');
-			await models.set(await getModels());
+			// if there are more urls than keys, add empty keys
+			if (config.OPENAI_API_KEYS.length < config.OPENAI_API_BASE_URLS.length) {
+				const diff = config.OPENAI_API_BASE_URLS.length - config.OPENAI_API_KEYS.length;
+				for (let i = 0; i < diff; i++) {
+					config.OPENAI_API_KEYS.push('');
+				}
+			}
 		}
+
+		await saveSettings({
+			directConnections: config
+		});
 	};
 
 	onMount(async () => {
-		if ($user.role === 'admin') {
-			API_BASE_URL = await getOllamaAPIUrl(localStorage.token);
-			OPENAI_API_BASE_URL = await getOpenAIUrl(localStorage.token);
-			OPENAI_API_KEY = await getOpenAIKey(localStorage.token);
-		}
+		config = $settings?.directConnections ?? {
+			OPENAI_API_BASE_URLS: [],
+			OPENAI_API_KEYS: [],
+			OPENAI_API_CONFIGS: {}
+		};
 	});
 </script>
+
+<AddConnectionModal direct bind:show={showConnectionModal} onSubmit={addConnectionHandler} />
 
 <form
 	class="flex flex-col h-full justify-between text-sm"
 	on:submit|preventDefault={() => {
-		updateOpenAIHandler();
-		dispatch('save');
-
-		// saveSettings({
-		// 	OPENAI_API_KEY: OPENAI_API_KEY !== '' ? OPENAI_API_KEY : undefined,
-		// 	OPENAI_API_BASE_URL: OPENAI_API_BASE_URL !== '' ? OPENAI_API_BASE_URL : undefined
-		// });
+		updateHandler();
 	}}
 >
-	<div class="  pr-1.5 overflow-y-scroll max-h-[20.5rem] space-y-3">
-		<div class=" space-y-3">
-			<div class="mt-2 space-y-2 pr-1.5">
-				<div class="flex justify-between items-center text-sm">
-					<div class="  font-medium">OpenAI API</div>
-					<button
-						class=" text-xs font-medium text-gray-500"
-						type="button"
-						on:click={() => {
-							showOpenAI = !showOpenAI;
-						}}>{showOpenAI ? 'Hide' : 'Show'}</button
-					>
-				</div>
+	<div class=" overflow-y-scroll scrollbar-hidden h-full">
+		{#if config !== null}
+			<div class="">
+				<div class="pr-1.5">
+					<div class="">
+						<div class="flex justify-between items-center mb-0.5">
+							<div class="font-medium">{$i18n.t('Manage Direct Connections')}</div>
 
-				{#if showOpenAI}
-					<div>
-						<div class=" mb-2.5 text-sm font-medium">API Key</div>
-						<div class="flex w-full">
-							<div class="flex-1">
-								<input
-									class="w-full rounded py-2 px-4 text-sm dark:text-gray-300 dark:bg-gray-800 outline-none"
-									placeholder="Enter OpenAI API Key"
-									bind:value={OPENAI_API_KEY}
-									autocomplete="off"
+							<Tooltip content={$i18n.t(`Add Connection`)}>
+								<button
+									class="px-1"
+									on:click={() => {
+										showConnectionModal = true;
+									}}
+									type="button"
+								>
+									<Plus />
+								</button>
+							</Tooltip>
+						</div>
+
+						<div class="flex flex-col gap-1.5">
+							{#each config?.OPENAI_API_BASE_URLS ?? [] as url, idx}
+								<Connection
+									bind:url
+									bind:key={config.OPENAI_API_KEYS[idx]}
+									bind:config={config.OPENAI_API_CONFIGS[idx]}
+									onSubmit={() => {
+										updateHandler();
+									}}
+									onDelete={() => {
+										config.OPENAI_API_BASE_URLS = config.OPENAI_API_BASE_URLS.filter(
+											(url, urlIdx) => idx !== urlIdx
+										);
+										config.OPENAI_API_KEYS = config.OPENAI_API_KEYS.filter(
+											(key, keyIdx) => idx !== keyIdx
+										);
+
+										let newConfig = {};
+										config.OPENAI_API_BASE_URLS.forEach((url, newIdx) => {
+											newConfig[newIdx] =
+												config.OPENAI_API_CONFIGS[newIdx < idx ? newIdx : newIdx + 1];
+										});
+										config.OPENAI_API_CONFIGS = newConfig;
+									}}
 								/>
-							</div>
+							{/each}
 						</div>
 					</div>
 
-					<div>
-						<div class=" mb-2.5 text-sm font-medium">API Base URL</div>
-						<div class="flex w-full">
-							<div class="flex-1">
-								<input
-									class="w-full rounded py-2 px-4 text-sm dark:text-gray-300 dark:bg-gray-800 outline-none"
-									placeholder="Enter OpenAI API Base URL"
-									bind:value={OPENAI_API_BASE_URL}
-									autocomplete="off"
-								/>
-							</div>
-						</div>
-						<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
-							WebUI will make requests to <span class=" text-gray-200"
-								>'{OPENAI_API_BASE_URL}/chat'</span
-							>
+					<div class="my-1.5">
+						<div class="text-xs text-gray-500">
+							{$i18n.t('Connect to your own OpenAI compatible API endpoints.')}
+							<br />
+							{$i18n.t(
+								'CORS must be properly configured by the provider to allow requests from Open WebUI.'
+							)}
 						</div>
 					</div>
-				{/if}
-			</div>
-		</div>
-
-		<hr class=" dark:border-gray-700" />
-
-		<div>
-			<div class=" mb-2.5 text-sm font-medium">Ollama Base URL</div>
-			<div class="flex w-full">
-				<div class="flex-1 mr-2">
-					<input
-						class="w-full rounded py-2 px-4 text-sm dark:text-gray-300 dark:bg-gray-800 outline-none"
-						placeholder="Enter URL (e.g. http://localhost:11434)"
-						bind:value={API_BASE_URL}
-					/>
 				</div>
-				<button
-					class="px-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-700 rounded transition"
-					on:click={() => {
-						updateOllamaAPIUrlHandler();
-					}}
-					type="button"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 20 20"
-						fill="currentColor"
-						class="w-4 h-4"
-					>
-						<path
-							fill-rule="evenodd"
-							d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z"
-							clip-rule="evenodd"
-						/>
-					</svg>
-				</button>
 			</div>
-
-			<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
-				Trouble accessing Ollama?
-				<a
-					class=" text-gray-300 font-medium"
-					href="https://github.com/open-webui/open-webui#troubleshooting"
-					target="_blank"
-				>
-					Click here for help.
-				</a>
+		{:else}
+			<div class="flex h-full justify-center">
+				<div class="my-auto">
+					<Spinner className="size-6" />
+				</div>
 			</div>
-		</div>
+		{/if}
 	</div>
 
 	<div class="flex justify-end pt-3 text-sm font-medium">
 		<button
-			class=" px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-gray-100 transition rounded"
+			class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
 			type="submit"
 		>
-			Save
+			{$i18n.t('Save')}
 		</button>
 	</div>
 </form>

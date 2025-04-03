@@ -1,85 +1,58 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
+	import { onMount, tick, getContext } from 'svelte';
 	import { openDB, deleteDB } from 'idb';
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
+	import mermaid from 'mermaid';
 
-	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { fade } from 'svelte/transition';
 
-	import { getOllamaModels, getOllamaVersion } from '$lib/apis/ollama';
-	import { getModelfiles } from '$lib/apis/modelfiles';
+	import { getKnowledgeBases } from '$lib/apis/knowledge';
+	import { getFunctions } from '$lib/apis/functions';
+	import { getModels, getToolServersData, getVersionUpdates } from '$lib/apis';
+	import { getAllTags } from '$lib/apis/chats';
 	import { getPrompts } from '$lib/apis/prompts';
-	import { getOpenAIModels } from '$lib/apis/openai';
-	import { getLiteLLMModels } from '$lib/apis/litellm';
-	import { getDocs } from '$lib/apis/documents';
-	import { getAllChatTags } from '$lib/apis/chats';
+	import { getTools } from '$lib/apis/tools';
+	import { getBanners } from '$lib/apis/configs';
+	import { getUserSettings } from '$lib/apis/users';
 
-	import {
-		user,
-		showSettings,
-		settings,
-		models,
-		modelfiles,
-		prompts,
-		documents,
-		tags,
-		showChangelog,
-		config
-	} from '$lib/stores';
-	import { REQUIRED_OLLAMA_VERSION, WEBUI_API_BASE_URL } from '$lib/constants';
+	import { WEBUI_VERSION } from '$lib/constants';
 	import { compareVersion } from '$lib/utils';
 
-	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
+	import {
+		config,
+		user,
+		settings,
+		models,
+		prompts,
+		knowledge,
+		tools,
+		functions,
+		tags,
+		banners,
+		showSettings,
+		showChangelog,
+		temporaryChatEnabled,
+		toolServers
+	} from '$lib/stores';
+
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
-	import ShortcutsModal from '$lib/components/chat/ShortcutsModal.svelte';
+	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
 	import ChangelogModal from '$lib/components/ChangelogModal.svelte';
+	import AccountPending from '$lib/components/layout/Overlay/AccountPending.svelte';
+	import UpdateInfoToast from '$lib/components/layout/UpdateInfoToast.svelte';
+	import { get } from 'svelte/store';
 
-	let ollamaVersion = '';
+	const i18n = getContext('i18n');
+
 	let loaded = false;
-
 	let DB = null;
 	let localDBChats = [];
 
-	let showShortcuts = false;
-
-	const getModels = async () => {
-		let models = await Promise.all([
-			await getOllamaModels(localStorage.token).catch((error) => {
-				console.log(error);
-				return null;
-			}),
-			await getOpenAIModels(localStorage.token).catch((error) => {
-				console.log(error);
-				return null;
-			}),
-			await getLiteLLMModels(localStorage.token).catch((error) => {
-				console.log(error);
-				return null;
-			})
-		]);
-
-		models = models
-			.filter((models) => models)
-			.reduce((a, e, i, arr) => a.concat(e, ...(i < arr.length - 1 ? [{ name: 'hr' }] : [])), []);
-
-		return models;
-	};
-
-	const setOllamaVersion = async (version: string = '') => {
-		if (version === '') {
-			version = await getOllamaVersion(localStorage.token).catch((error) => {
-				return '';
-			});
-		}
-
-		ollamaVersion = version;
-
-		console.log(ollamaVersion);
-		if (compareVersion(REQUIRED_OLLAMA_VERSION, ollamaVersion)) {
-			toast.error(`Ollama Version: ${ollamaVersion !== '' ? ollamaVersion : 'Not Detected'}`);
-		}
-	};
+	let version;
 
 	onMount(async () => {
 		if ($user === undefined) {
@@ -96,34 +69,44 @@
 					if (localDBChats.length === 0) {
 						await deleteDB('Chats');
 					}
-
-					console.log('localdb', localDBChats);
 				}
 
 				console.log(DB);
 			} catch (error) {
 				// IndexedDB Not Found
-				console.log('IDB Not Found');
 			}
 
-			console.log();
-
-			await models.set(await getModels());
-			await tick();
-
-			await settings.set(JSON.parse(localStorage.getItem('settings') ?? '{}'));
-
-			await modelfiles.set(await getModelfiles(localStorage.token));
-			await prompts.set(await getPrompts(localStorage.token));
-			await documents.set(await getDocs(localStorage.token));
-			await tags.set(await getAllChatTags(localStorage.token));
-
-			modelfiles.subscribe(async () => {
-				// should fetch models
-				await models.set(await getModels());
+			const userSettings = await getUserSettings(localStorage.token).catch((error) => {
+				console.error(error);
+				return null;
 			});
 
-			document.addEventListener('keydown', function (event) {
+			if (userSettings) {
+				settings.set(userSettings.ui);
+			} else {
+				let localStorageSettings = {} as Parameters<(typeof settings)['set']>[0];
+
+				try {
+					localStorageSettings = JSON.parse(localStorage.getItem('settings') ?? '{}');
+				} catch (e: unknown) {
+					console.error('Failed to parse settings from localStorage', e);
+				}
+
+				settings.set(localStorageSettings);
+			}
+
+			models.set(
+				await getModels(
+					localStorage.token,
+					$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
+				)
+			);
+
+			banners.set(await getBanners(localStorage.token));
+			tools.set(await getTools(localStorage.token));
+			toolServers.set(await getToolServersData($i18n, $settings?.toolServers ?? []));
+
+			document.addEventListener('keydown', async function (event) {
 				const isCtrlPressed = event.ctrlKey || event.metaKey; // metaKey is for Cmd key on Mac
 				// Check if the Shift key is pressed
 				const isShiftPressed = event.shiftKey;
@@ -139,7 +122,7 @@
 				if (isShiftPressed && event.key === 'Escape') {
 					event.preventDefault();
 					console.log('focusInput');
-					document.getElementById('chat-textarea')?.focus();
+					document.getElementById('chat-input')?.focus();
 				}
 
 				// Check if Ctrl + Shift + ; is pressed
@@ -167,7 +150,11 @@
 				}
 
 				// Check if Ctrl + Shift + Backspace is pressed
-				if (isCtrlPressed && isShiftPressed && event.key === 'Backspace') {
+				if (
+					isCtrlPressed &&
+					isShiftPressed &&
+					(event.key === 'Backspace' || event.key === 'Delete')
+				) {
 					event.preventDefault();
 					console.log('deleteChat');
 					document.getElementById('delete-chat-button')?.click();
@@ -177,7 +164,7 @@
 				if (isCtrlPressed && event.key === '.') {
 					event.preventDefault();
 					console.log('openSettings');
-					document.getElementById('open-settings-button')?.click();
+					showSettings.set(!$showSettings);
 				}
 
 				// Check if Ctrl + / is pressed
@@ -186,136 +173,149 @@
 					console.log('showShortcuts');
 					document.getElementById('show-shortcuts-button')?.click();
 				}
+
+				// Check if Ctrl + Shift + ' is pressed
+				if (
+					isCtrlPressed &&
+					isShiftPressed &&
+					(event.key.toLowerCase() === `'` || event.key.toLowerCase() === `"`)
+				) {
+					event.preventDefault();
+					console.log('temporaryChat');
+					temporaryChatEnabled.set(!$temporaryChatEnabled);
+					await goto('/');
+					const newChatButton = document.getElementById('new-chat-button');
+					setTimeout(() => {
+						newChatButton?.click();
+					}, 0);
+				}
 			});
 
-			if ($user.role === 'admin') {
-				showChangelog.set(localStorage.version !== $config.version);
+			if ($user.role === 'admin' && ($settings?.showChangelog ?? true)) {
+				showChangelog.set($settings?.version !== $config.version);
 			}
 
+			if ($page.url.searchParams.get('temporary-chat') === 'true') {
+				temporaryChatEnabled.set(true);
+			}
+
+			console.log($user.permissions);
+
+			if ($user?.permissions?.chat?.temporary_enforced) {
+				temporaryChatEnabled.set(true);
+			}
+
+			// Check for version updates
+			if ($user.role === 'admin') {
+				// Check if the user has dismissed the update toast in the last 24 hours
+				if (localStorage.dismissedUpdateToast) {
+					const dismissedUpdateToast = new Date(Number(localStorage.dismissedUpdateToast));
+					const now = new Date();
+
+					if (now - dismissedUpdateToast > 24 * 60 * 60 * 1000) {
+						checkForVersionUpdates();
+					}
+				} else {
+					checkForVersionUpdates();
+				}
+			}
 			await tick();
 		}
 
 		loaded = true;
 	});
+
+	const checkForVersionUpdates = async () => {
+		version = await getVersionUpdates(localStorage.token).catch((error) => {
+			return {
+				current: WEBUI_VERSION,
+				latest: WEBUI_VERSION
+			};
+		});
+	};
 </script>
 
-{#if loaded}
-	<div class=" hidden lg:flex fixed bottom-0 right-0 px-3 py-3 z-10">
-		<button
-			id="show-shortcuts-button"
-			class="text-gray-600 dark:text-gray-300 bg-gray-300/20 w-6 h-6 flex items-center justify-center text-xs rounded-full"
-			on:click={() => {
-				showShortcuts = !showShortcuts;
+<SettingsModal bind:show={$showSettings} />
+<ChangelogModal bind:show={$showChangelog} />
+
+{#if version && compareVersion(version.latest, version.current) && ($settings?.showUpdateToast ?? true)}
+	<div class=" absolute bottom-8 right-8 z-50" in:fade={{ duration: 100 }}>
+		<UpdateInfoToast
+			{version}
+			on:close={() => {
+				localStorage.setItem('dismissedUpdateToast', Date.now().toString());
+				version = null;
 			}}
-		>
-			?
-		</button>
-	</div>
-
-	<ShortcutsModal bind:show={showShortcuts} />
-
-	<div class="app relative">
-		{#if !['user', 'admin'].includes($user.role)}
-			<div class="fixed w-full h-full flex z-50">
-				<div
-					class="absolute w-full h-full backdrop-blur-md bg-white/20 dark:bg-gray-900/50 flex justify-center"
-				>
-					<div class="m-auto pb-44 flex flex-col justify-center">
-						<div class="max-w-md">
-							<div class="text-center dark:text-white text-2xl font-medium z-50">
-								Account Activation Pending<br /> Contact Admin for WebUI Access
-							</div>
-
-							<div class=" mt-4 text-center text-sm dark:text-gray-200 w-full">
-								Your account status is currently pending activation. To access the WebUI, please
-								reach out to the administrator. Admins can manage user statuses from the Admin
-								Panel.
-							</div>
-
-							<div class=" mt-6 mx-auto relative group w-fit">
-								<button
-									class="relative z-20 flex px-5 py-2 rounded-full bg-white border border-gray-100 dark:border-none hover:bg-gray-100 transition font-medium text-sm"
-									on:click={async () => {
-										location.href = '/';
-									}}
-								>
-									Check Again
-								</button>
-
-								<button
-									class="text-xs text-center w-full mt-2 text-gray-400 underline"
-									on:click={async () => {
-										localStorage.removeItem('token');
-										location.href = '/auth';
-									}}>Sign Out</button
-								>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-		{:else if localDBChats.length > 0}
-			<div class="fixed w-full h-full flex z-50">
-				<div
-					class="absolute w-full h-full backdrop-blur-md bg-white/20 dark:bg-gray-900/50 flex justify-center"
-				>
-					<div class="m-auto pb-44 flex flex-col justify-center">
-						<div class="max-w-md">
-							<div class="text-center dark:text-white text-2xl font-medium z-50">
-								Important Update<br /> Action Required for Chat Log Storage
-							</div>
-
-							<div class=" mt-4 text-center text-sm dark:text-gray-200 w-full">
-								Saving chat logs directly to your browser's storage is no longer supported. Please
-								take a moment to download and delete your chat logs by clicking the button below.
-								Don't worry, you can easily re-import your chat logs to the backend through <span
-									class="font-semibold dark:text-white">Settings > Chats > Import Chats</span
-								>. This ensures that your valuable conversations are securely saved to your backend
-								database. Thank you!
-							</div>
-
-							<div class=" mt-6 mx-auto relative group w-fit">
-								<button
-									class="relative z-20 flex px-5 py-2 rounded-full bg-white border border-gray-100 dark:border-none hover:bg-gray-100 transition font-medium text-sm"
-									on:click={async () => {
-										let blob = new Blob([JSON.stringify(localDBChats)], {
-											type: 'application/json'
-										});
-										saveAs(blob, `chat-export-${Date.now()}.json`);
-
-										const tx = DB.transaction('chats', 'readwrite');
-										await Promise.all([tx.store.clear(), tx.done]);
-										await deleteDB('Chats');
-
-										localDBChats = [];
-									}}
-								>
-									Download & Delete
-								</button>
-
-								<button
-									class="text-xs text-center w-full mt-2 text-gray-400 underline"
-									on:click={async () => {
-										localDBChats = [];
-									}}>Close</button
-								>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-		{/if}
-
-		<div
-			class=" text-gray-700 dark:text-gray-100 bg-white dark:bg-gray-900 min-h-screen overflow-auto flex flex-row"
-		>
-			<Sidebar />
-			<SettingsModal bind:show={$showSettings} />
-			<ChangelogModal bind:show={$showChangelog} />
-			<slot />
-		</div>
+		/>
 	</div>
 {/if}
+
+<div class="app relative">
+	<div
+		class=" text-gray-700 dark:text-gray-100 bg-white dark:bg-gray-900 h-screen max-h-[100dvh] overflow-auto flex flex-row justify-end"
+	>
+		{#if loaded}
+			{#if !['user', 'admin'].includes($user.role)}
+				<AccountPending />
+			{:else if localDBChats.length > 0}
+				<div class="fixed w-full h-full flex z-50">
+					<div
+						class="absolute w-full h-full backdrop-blur-md bg-white/20 dark:bg-gray-900/50 flex justify-center"
+					>
+						<div class="m-auto pb-44 flex flex-col justify-center">
+							<div class="max-w-md">
+								<div class="text-center dark:text-white text-2xl font-medium z-50">
+									Important Update<br /> Action Required for Chat Log Storage
+								</div>
+
+								<div class=" mt-4 text-center text-sm dark:text-gray-200 w-full">
+									{$i18n.t(
+										"Saving chat logs directly to your browser's storage is no longer supported. Please take a moment to download and delete your chat logs by clicking the button below. Don't worry, you can easily re-import your chat logs to the backend through"
+									)}
+									<span class="font-semibold dark:text-white"
+										>{$i18n.t('Settings')} > {$i18n.t('Chats')} > {$i18n.t('Import Chats')}</span
+									>. {$i18n.t(
+										'This ensures that your valuable conversations are securely saved to your backend database. Thank you!'
+									)}
+								</div>
+
+								<div class=" mt-6 mx-auto relative group w-fit">
+									<button
+										class="relative z-20 flex px-5 py-2 rounded-full bg-white border border-gray-100 dark:border-none hover:bg-gray-100 transition font-medium text-sm"
+										on:click={async () => {
+											let blob = new Blob([JSON.stringify(localDBChats)], {
+												type: 'application/json'
+											});
+											saveAs(blob, `chat-export-${Date.now()}.json`);
+
+											const tx = DB.transaction('chats', 'readwrite');
+											await Promise.all([tx.store.clear(), tx.done]);
+											await deleteDB('Chats');
+
+											localDBChats = [];
+										}}
+									>
+										Download & Delete
+									</button>
+
+									<button
+										class="text-xs text-center w-full mt-2 text-gray-400 underline"
+										on:click={async () => {
+											localDBChats = [];
+										}}>{$i18n.t('Close')}</button
+									>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			{/if}
+
+			<Sidebar />
+			<slot />
+		{/if}
+	</div>
+</div>
 
 <style>
 	.loading {
