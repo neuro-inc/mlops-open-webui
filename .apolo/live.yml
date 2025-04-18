@@ -17,33 +17,38 @@ volumes:
     remote: storage:ollama_server/cache
     mount: /root/.cache/huggingface
 
+images:
+  openwebui:
+    ref: image:open-webui:library
+    dockerfile: $[[ flow.workspace ]]/Dockerfile
+    context: $[[ flow.workspace ]]
+    build_preset: cpu-8-20
+
 jobs:
-  ollama_worker:
-    image: ollama/ollama:0.5.7
+  text_embeddings:
+    image: ghcr.io/huggingface/text-embeddings-inference:hopper-1.7 # remove "hopper" if not running on H100
     life_span: 10d
     detach: true
-    # preset: gpu-small
-    preset: dgx
-    env:
-      OLLAMA_KEEP_ALIVE: -1
-      OLLAMA_FLASH_ATTENTION: 1
-      OLLAMA_KV_CACHE_TYPE: q4_0
-    volumes:
-      - $[[ volumes.data.ref_rw ]]
+    preset: H100x1
+    http_port: 80
+    http_auth: false
 
   web:
-    image: ghcr.io/open-webui/open-webui:v0.5.11
+    image: $[[ images.openwebui.ref ]]
     volumes:
       - ${{ volumes.webdata.ref_rw }}
     http_port: 8080
-    preset: cpu-small
+    preset: cpu-8-20
     detach: true
     browse: true
     env:
       WEBUI_SECRET_KEY: "apolo"
       OPENAI_API_BASE_URL: http://${{ inspect_job(params.server).internal_hostname_named }}:8000/v1 # inspects vllm job in runtime to derive endpoint domain address
+      RAG_EMBEDDING_ENGINE: openai
+      RAG_OPENAI_API_BASE_URL: http://${{ inspect_job(params.tei).internal_hostname_named }}:3000
     params:
-      server: ray_worker
+      server: vllm
+      tei: text_embeddings
 
   vllm:
     image: vllm/vllm-openai:v0.7.2
@@ -62,53 +67,3 @@ jobs:
       --dtype=half
       --tensor-parallel-size=2
       --max-model-len=10000
-
-  ray_head:
-    image: vllm/vllm-openai:v0.7.2
-    name: ray-head
-    preset: dgx
-    detach: true
-    life_span: 10d
-    http_port: "8000"
-    volumes:
-      - ${{ volumes.hf_cache.ref_rw }}
-    env:
-      HF_TOKEN: secret:HF_TOKEN
-    entrypoint: ray
-    cmd: >
-      start --block --head --port=6379 --dashboard-host=0.0.0.0
-
-  ray_extra_worker:
-    image: vllm/vllm-openai:v0.7.2
-    preset: dgx
-    multi: true
-    detach: true
-    http_port: "8000"
-    http_auth: false
-    life_span: 10d
-    volumes:
-      - ${{ volumes.hf_cache.ref_rw }}
-    env:
-      HF_TOKEN: secret:HF_TOKEN
-    cmd: >
-      ray start --address=${{ inspect_job('ray_head').internal_hostname_named }}:6379
-
-  ray_worker:
-    image: vllm/vllm-openai:v0.7.2
-    name: ray-worker
-    preset: dgx
-    detach: true
-    http_port: "8000"
-    http_auth: false
-    life_span: 10d
-    volumes:
-      - ${{ volumes.hf_cache.ref_rw }}
-    env:
-      HF_TOKEN: secret:HF_TOKEN
-    entrypoint: bash
-    cmd: >
-      -c 'ray start --address=${{ inspect_job('ray_head').internal_hostname_named }}:6379
-        python3 -m vllm.entrypoints.openai.api_server --model cognitivecomputations/DeepSeek-R1-AWQ --tokenizer cognitivecomputations/DeepSeek-R1-AWQ --dtype=float16 --tensor-parallel-size=8 --pipeline-parallel-size=2 --trust-remote-code --max-model-len=100000 --enforce-eager'
-
-    # hallucinates python3 -m vllm.entrypoints.openai.api_server --model deepseek-ai/DeepSeek-R1 --tokenizer deepseek-ai/DeepSeek-R1 --dtype=half --tensor-parallel-size=4 --pipeline-parallel-size=4 --trust-remote-code --max-model-len=30000 --gpu-memory-utilization=0.99'
-    # hallucinates python3 -m vllm.entrypoints.openai.api_server --model deepseek-ai/DeepSeek-R1 --tokenizer deepseek-ai/DeepSeek-R1 --dtype=half --tensor-parallel-size=16 --trust-remote-code
