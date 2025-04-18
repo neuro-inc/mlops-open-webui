@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/neuro-inc/neuro-flow/refs/heads/master/src/apolo_flow/flow-schema.json
 kind: live
 title: My flow
 
@@ -45,25 +46,42 @@ jobs:
       WEBUI_SECRET_KEY: "apolo"
       OPENAI_API_BASE_URL: http://${{ inspect_job(params.server).internal_hostname_named }}:8000/v1 # inspects vllm job in runtime to derive endpoint domain address
       RAG_EMBEDDING_ENGINE: openai
-      RAG_OPENAI_API_BASE_URL: http://${{ inspect_job(params.tei).internal_hostname_named }}:3000
+      RAG_OPENAI_API_BASE_URL: http://${{ inspect_job(params.tei).internal_hostname_named }}/v1
     params:
       server: vllm
       tei: text_embeddings
 
-  vllm:
-    image: vllm/vllm-openai:v0.7.2
-    preset: ${{ params.preset }}
-    http_port: "8000"
+  vllm: # its actually ollama but lets keep the same name
+    image: ollama/ollama:0.6.5
+    life_span: 10d
     detach: true
-    volumes:
-      - ${{ volumes.hf_cache.ref_rw }}
+    preset: cpu-8-20
+    http_port: 8000
     env:
-      HF_TOKEN: secret:HF_TOKEN # your huggingface token used to pull models, could be added with `apolo secret add HF_TOKEN <token>`
-    params:
-      preset: H100x2 # replace the preset during the job startup via `apolo-flow run vllm --param preset <preset-name>`
+      OLLAMA_KEEP_ALIVE: -1
+      OLLAMA_FLASH_ATTENTION: 1
+      OLLAMA_KV_CACHE_TYPE: q4_0
+      OLLAMA_HOST: "0.0.0.0:8000"
+    volumes:
+      - $[[ volumes.data.ref_rw ]]
+    entrypoint: /bin/bash
     cmd: >
-      --model deepseek-ai/DeepSeek-R1-Distill-Llama-70B 
-      --tokenizer deepseek-ai/DeepSeek-R1-Distill-Llama-70B
-      --dtype=half
-      --tensor-parallel-size=2
-      --max-model-len=10000
+      -c "/bin/ollama serve & sleep 30 && /bin/ollama pull gemma3:4b && wait" 
+
+  # vllm:
+  #   image: vllm/vllm-openai:v0.7.2
+  #   preset: ${{ params.preset }}
+  #   http_port: "8000"
+  #   detach: true
+  #   volumes:
+  #     - ${{ volumes.hf_cache.ref_rw }}
+  #   env:
+  #     HF_TOKEN: secret:HF_TOKEN # your huggingface token used to pull models, could be added with `apolo secret add HF_TOKEN <token>`
+  #   params:
+  #     preset: H100x2 # replace the preset during the job startup via `apolo-flow run vllm --param preset <preset-name>`
+  #   cmd: >
+  #     --model deepseek-ai/DeepSeek-R1-Distill-Llama-70B 
+  #     --tokenizer deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  #     --dtype=half
+  #     --tensor-parallel-size=2
+  #     --max-model-len=10000
