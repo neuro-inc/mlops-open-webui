@@ -1,10 +1,13 @@
 <script lang="ts">
+	import DOMPurify from 'dompurify';
+
 	import { onMount, getContext, createEventDispatcher } from 'svelte';
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
 	import { fade } from 'svelte/transition';
 	import { flyAndScale } from '$lib/utils/transitions';
+	import { marked } from 'marked';
 
 	export let title = '';
 	export let message = '';
@@ -65,7 +68,7 @@
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
 	<div
 		bind:this={modalElement}
-		class=" fixed top-0 right-0 left-0 bottom-0 bg-black/60 w-full h-screen max-h-[100dvh] flex justify-center z-[99999999] overflow-hidden overscroll-contain"
+		class=" fixed top-0 right-0 left-0 bottom-0 bg-black/60 w-full h-screen max-h-[100dvh] flex justify-center z-99999999 overflow-hidden overscroll-contain"
 		in:fade={{ duration: 10 }}
 		on:mousedown={() => {
 			show = false;
@@ -90,7 +93,8 @@
 				<slot>
 					<div class=" text-sm text-gray-500 flex-1">
 						{#if message !== ''}
-							{message}
+							{@const html = DOMPurify.sanitize(marked.parse(message))}
+							{@html html}
 						{:else}
 							{$i18n.t('This action cannot be undone. Do you wish to continue?')}
 						{/if}
@@ -99,7 +103,7 @@
 							<textarea
 								bind:value={inputValue}
 								placeholder={inputPlaceholder ? inputPlaceholder : $i18n.t('Enter your message')}
-								class="w-full mt-2 rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 outline-none resize-none"
+								class="w-full mt-2 rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 outline-hidden resize-none"
 								rows="3"
 								required
 							/>

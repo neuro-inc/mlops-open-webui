@@ -23,27 +23,45 @@
 	import AddUserModal from '$lib/components/admin/Users/UserList/AddUserModal.svelte';
 
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import RoleUpdateConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+
 	import Badge from '$lib/components/common/Badge.svelte';
 	import Plus from '$lib/components/icons/Plus.svelte';
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import About from '$lib/components/chat/Settings/About.svelte';
+	import Banner from '$lib/components/common/Banner.svelte';
+	import Markdown from '$lib/components/chat/Messages/Markdown.svelte';
 
 	const i18n = getContext('i18n');
 
-	export let users = [];
-
-	let search = '';
-	let selectedUser = null;
-
 	let page = 1;
+
+	let users = [];
+	let total = 0;
+
+	let query = '';
+	let orderBy = 'created_at'; // default sort key
+	let direction = 'asc'; // default sort order
+
+	let selectedUser = null;
 
 	let showDeleteConfirmDialog = false;
 	let showAddUserModal = false;
 
 	let showUserChatsModal = false;
 	let showEditUserModal = false;
+	let showUpdateRoleModal = false;
 
+	const onUpdateRole = (user) => {
+		if (user.role === 'user') {
+			updateRoleHandler(user.id, 'admin');
+		} else if (user.role === 'pending') {
+			updateRoleHandler(user.id, 'user');
+		} else {
+			updateRoleHandler(user.id, 'pending');
+		}
+	};
 	const updateRoleHandler = async (id, role) => {
 		const res = await updateUserRole(localStorage.token, id, role).catch((error) => {
 			toast.error(`${error}`);
@@ -51,7 +69,7 @@
 		});
 
 		if (res) {
-			users = await getUsers(localStorage.token);
+			getUserList();
 		}
 	};
 
@@ -60,41 +78,51 @@
 			toast.error(`${error}`);
 			return null;
 		});
+
+		// if the user is deleted and the current page has only one user, go back to the previous page
+		if (users.length === 1 && page > 1) {
+			page -= 1;
+		}
+
 		if (res) {
-			users = await getUsers(localStorage.token);
+			getUserList();
 		}
 	};
 
-	let sortKey = 'created_at'; // default sort key
-	let sortOrder = 'asc'; // default sort order
-
-	function setSortKey(key) {
-		if (sortKey === key) {
-			sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+	const setSortKey = (key) => {
+		if (orderBy === key) {
+			direction = direction === 'asc' ? 'desc' : 'asc';
 		} else {
-			sortKey = key;
-			sortOrder = 'asc';
+			orderBy = key;
+			direction = 'asc';
 		}
+	};
+
+	const getUserList = async () => {
+		try {
+			const res = await getUsers(localStorage.token, query, orderBy, direction, page).catch(
+				(error) => {
+					toast.error(`${error}`);
+					return null;
+				}
+			);
+
+			if (res) {
+				users = res.users;
+				total = res.total;
+			}
+		} catch (err) {
+			console.error(err);
+		}
+	};
+
+	$: if (page) {
+		getUserList();
 	}
 
-	let filteredUsers;
-
-	$: filteredUsers = users
-		.filter((user) => {
-			if (search === '') {
-				return true;
-			} else {
-				let name = user.name.toLowerCase();
-				const query = search.toLowerCase();
-				return name.includes(query);
-			}
-		})
-		.sort((a, b) => {
-			if (a[sortKey] < b[sortKey]) return sortOrder === 'asc' ? -1 : 1;
-			if (a[sortKey] > b[sortKey]) return sortOrder === 'asc' ? 1 : -1;
-			return 0;
-		})
-		.slice((page - 1) * 20, page * 20);
+	$: if (query !== null && orderBy && direction) {
+		getUserList();
+	}
 </script>
 
 <ConfirmDialog
@@ -104,13 +132,28 @@
 	}}
 />
 
+<RoleUpdateConfirmDialog
+	bind:show={showUpdateRoleModal}
+	on:confirm={() => {
+		onUpdateRole(selectedUser);
+	}}
+	message={$i18n.t(`Are you sure you want to update this user\'s role to **{{ROLE}}**?`, {
+		ROLE:
+			selectedUser?.role === 'user'
+				? 'admin'
+				: selectedUser?.role === 'pending'
+					? 'user'
+					: 'pending'
+	})}
+/>
+
 {#key selectedUser}
 	<EditUserModal
 		bind:show={showEditUserModal}
 		{selectedUser}
 		sessionUser={$user}
 		on:save={async () => {
-			users = await getUsers(localStorage.token);
+			getUserList();
 		}}
 	/>
 {/key}
@@ -118,17 +161,48 @@
 <AddUserModal
 	bind:show={showAddUserModal}
 	on:save={async () => {
-		users = await getUsers(localStorage.token);
+		getUserList();
 	}}
 />
 <UserChatsModal bind:show={showUserChatsModal} user={selectedUser} />
 
+{#if ($config?.license_metadata?.seats ?? null) !== null && users.length > $config?.license_metadata?.seats}
+	<div class=" mt-1 mb-2 text-xs text-red-500">
+		<Banner
+			className="mx-0"
+			banner={{
+				type: 'error',
+				title: 'License Error',
+				content:
+					'Exceeded the number of seats in your license. Please contact support to increase the number of seats.',
+				dismissable: true
+			}}
+		/>
+	</div>
+{/if}
+
 <div class="mt-0.5 mb-2 gap-1 flex flex-col md:flex-row justify-between">
 	<div class="flex md:self-center text-lg font-medium px-0.5">
-		{$i18n.t('Users')}
+		<div class="flex-shrink-0">
+			{$i18n.t('Users')}
+		</div>
 		<div class="flex self-center w-[1px] h-6 mx-2.5 bg-gray-50 dark:bg-gray-850" />
 
-		<span class="text-lg font-medium text-gray-500 dark:text-gray-300">{users.length}</span>
+		{#if ($config?.license_metadata?.seats ?? null) !== null}
+			{#if total > $config?.license_metadata?.seats}
+				<span class="text-lg font-medium text-red-500"
+					>{total} of {$config?.license_metadata?.seats}
+					<span class="text-sm font-normal">available users</span></span
+				>
+			{:else}
+				<span class="text-lg font-medium text-gray-500 dark:text-gray-300"
+					>{total} of {$config?.license_metadata?.seats}
+					<span class="text-sm font-normal">available users</span></span
+				>
+			{/if}
+		{:else}
+			<span class="text-lg font-medium text-gray-500 dark:text-gray-300">{total}</span>
+		{/if}
 	</div>
 
 	<div class="flex gap-1">
@@ -149,8 +223,8 @@
 					</svg>
 				</div>
 				<input
-					class=" w-full text-sm pr-4 py-1 rounded-r-xl outline-none bg-transparent"
-					bind:value={search}
+					class=" w-full text-sm pr-4 py-1 rounded-r-xl outline-hidden bg-transparent"
+					bind:value={query}
 					placeholder={$i18n.t('Search')}
 				/>
 			</div>
@@ -171,9 +245,11 @@
 	</div>
 </div>
 
-<div class="scrollbar-hidden relative whitespace-nowrap overflow-x-auto max-w-full rounded pt-0.5">
+<div
+	class="scrollbar-hidden relative whitespace-nowrap overflow-x-auto max-w-full rounded-sm pt-0.5"
+>
 	<table
-		class="w-full text-sm text-left text-gray-500 dark:text-gray-400 table-auto max-w-full rounded"
+		class="w-full text-sm text-left text-gray-500 dark:text-gray-400 table-auto max-w-full rounded-sm"
 	>
 		<thead
 			class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-850 dark:text-gray-400 -translate-y-0.5"
@@ -187,9 +263,9 @@
 					<div class="flex gap-1.5 items-center">
 						{$i18n.t('Role')}
 
-						{#if sortKey === 'role'}
+						{#if orderBy === 'role'}
 							<span class="font-normal"
-								>{#if sortOrder === 'asc'}
+								>{#if direction === 'asc'}
 									<ChevronUp className="size-2" />
 								{:else}
 									<ChevronDown className="size-2" />
@@ -210,9 +286,9 @@
 					<div class="flex gap-1.5 items-center">
 						{$i18n.t('Name')}
 
-						{#if sortKey === 'name'}
+						{#if orderBy === 'name'}
 							<span class="font-normal"
-								>{#if sortOrder === 'asc'}
+								>{#if direction === 'asc'}
 									<ChevronUp className="size-2" />
 								{:else}
 									<ChevronDown className="size-2" />
@@ -233,9 +309,9 @@
 					<div class="flex gap-1.5 items-center">
 						{$i18n.t('Email')}
 
-						{#if sortKey === 'email'}
+						{#if orderBy === 'email'}
 							<span class="font-normal"
-								>{#if sortOrder === 'asc'}
+								>{#if direction === 'asc'}
 									<ChevronUp className="size-2" />
 								{:else}
 									<ChevronDown className="size-2" />
@@ -257,9 +333,9 @@
 					<div class="flex gap-1.5 items-center">
 						{$i18n.t('Last Active')}
 
-						{#if sortKey === 'last_active_at'}
+						{#if orderBy === 'last_active_at'}
 							<span class="font-normal"
-								>{#if sortOrder === 'asc'}
+								>{#if direction === 'asc'}
 									<ChevronUp className="size-2" />
 								{:else}
 									<ChevronDown className="size-2" />
@@ -279,9 +355,9 @@
 				>
 					<div class="flex gap-1.5 items-center">
 						{$i18n.t('Created at')}
-						{#if sortKey === 'created_at'}
+						{#if orderBy === 'created_at'}
 							<span class="font-normal"
-								>{#if sortOrder === 'asc'}
+								>{#if direction === 'asc'}
 									<ChevronUp className="size-2" />
 								{:else}
 									<ChevronDown className="size-2" />
@@ -303,9 +379,9 @@
 					<div class="flex gap-1.5 items-center">
 						{$i18n.t('OAuth ID')}
 
-						{#if sortKey === 'oauth_sub'}
+						{#if orderBy === 'oauth_sub'}
 							<span class="font-normal"
-								>{#if sortOrder === 'asc'}
+								>{#if direction === 'asc'}
 									<ChevronUp className="size-2" />
 								{:else}
 									<ChevronDown className="size-2" />
@@ -323,19 +399,14 @@
 			</tr>
 		</thead>
 		<tbody class="">
-			{#each filteredUsers as user, userIdx}
+			{#each users as user, userIdx}
 				<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
 					<td class="px-3 py-1 min-w-[7rem] w-28">
 						<button
 							class=" translate-y-0.5"
 							on:click={() => {
-								if (user.role === 'user') {
-									updateRoleHandler(user.id, 'admin');
-								} else if (user.role === 'pending') {
-									updateRoleHandler(user.id, 'user');
-								} else {
-									updateRoleHandler(user.id, 'pending');
-								}
+								selectedUser = user;
+								showUpdateRoleModal = true;
 							}}
 						>
 							<Badge
@@ -450,4 +521,28 @@
 	ⓘ {$i18n.t("Click on the user role button to change a user's role.")}
 </div>
 
-<Pagination bind:page count={users.length} />
+<Pagination bind:page count={total} perPage={10} />
+
+{#if !$config?.license_metadata}
+	{#if total > 50}
+		<div class="text-sm">
+			<Markdown
+				content={`
+> [!NOTE]
+> # **Hey there! 👋**
+>
+> It looks like you have over 50 users — that usually falls under organizational usage.
+> 
+> Open WebUI is proudly open source and completely free, with no hidden limits — and we'd love to keep it that way. 🌱  
+>
+> By supporting the project through sponsorship or an enterprise license, you’re not only helping us stay independent, you’re also helping us ship new features faster, improve stability, and grow the project for the long haul. With an *enterprise license*, you also get additional perks like dedicated support, customization options, and more — all at a fraction of what it would cost to build and maintain internally.  
+> 
+> Your support helps us stay independent and continue building great tools for everyone. 💛
+> 
+> - 👉 **[Click here to learn more about enterprise licensing](https://docs.openwebui.com/enterprise)**
+> - 👉 *[Click here to sponsor the project on GitHub](https://github.com/sponsors/tjbck)*
+`}
+			/>
+		</div>
+	{/if}
+{/if}
