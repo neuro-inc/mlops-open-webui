@@ -2,7 +2,7 @@
 	import Fuse from 'fuse.js';
 	import Bolt from '$lib/components/icons/Bolt.svelte';
 	import { onMount, getContext, createEventDispatcher } from 'svelte';
-	import { WEBUI_NAME } from '$lib/stores';
+	import { settings, WEBUI_NAME } from '$lib/stores';
 	import { WEBUI_VERSION } from '$lib/constants';
 
 	const i18n = getContext('i18n');
@@ -45,9 +45,10 @@
 		if (inputValue.length > 500) {
 			filteredPrompts = [];
 		} else {
-			const newFilteredPrompts = inputValue.trim()
-				? fuse.search(inputValue.trim()).map((result) => result.item)
-				: sortedPrompts;
+			const newFilteredPrompts =
+				inputValue.trim() && fuse
+					? fuse.search(inputValue.trim()).map((result) => result.item)
+					: sortedPrompts;
 
 			// Compare with the oldFilteredPrompts
 			// If there's a difference, update array + version
@@ -63,7 +64,7 @@
 	}
 </script>
 
-<div class="mb-1 flex gap-1 text-xs font-medium items-center text-gray-400 dark:text-gray-600">
+<div class="mb-1 flex gap-1 text-xs font-medium items-center text-gray-600 dark:text-gray-400">
 	{#if filteredPrompts.length > 0}
 		<Bolt />
 		{$i18n.t('Suggested')}
@@ -71,7 +72,9 @@
 		<!-- Keine Vorschläge -->
 
 		<div
-			class="flex w-full text-center items-center justify-center self-start text-gray-400 dark:text-gray-600"
+			class="flex w-full {$settings?.landingPageMode === 'chat'
+				? ' -mt-1'
+				: 'text-center items-center justify-center'}  self-start text-gray-600 dark:text-gray-400"
 		>
 			{$WEBUI_NAME} ‧ v{WEBUI_VERSION}
 		</div>
@@ -95,7 +98,7 @@
 						>
 							{prompt.title[0]}
 						</div>
-						<div class="text-xs text-gray-500 font-normal line-clamp-1">
+						<div class="text-xs text-gray-600 dark:text-gray-400 font-normal line-clamp-1">
 							{prompt.title[1]}
 						</div>
 					{:else}
@@ -104,7 +107,9 @@
 						>
 							{prompt.content}
 						</div>
-						<div class="text-xs text-gray-500 font-normal line-clamp-1">{$i18n.t('Prompt')}</div>
+						<div class="text-xs text-gray-600 dark:text-gray-400 font-normal line-clamp-1">
+							{$i18n.t('Prompt')}
+						</div>
 					{/if}
 				</div>
 			</button>
