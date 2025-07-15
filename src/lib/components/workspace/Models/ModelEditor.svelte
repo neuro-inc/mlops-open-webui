@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, getContext, tick } from 'svelte';
 	import { models, tools, functions, knowledge as knowledgeCollections, user } from '$lib/stores';
+	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import AdvancedParams from '$lib/components/chat/Settings/Advanced/AdvancedParams.svelte';
 	import Tags from '$lib/components/common/Tags.svelte';
@@ -16,6 +17,9 @@
 	import AccessControl from '../common/AccessControl.svelte';
 	import { stringify } from 'postcss';
 	import { toast } from 'svelte-sonner';
+	import Spinner from '$lib/components/common/Spinner.svelte';
+	import XMark from '$lib/components/icons/XMark.svelte';
+	import { getNoteList } from '$lib/apis/notes';
 
 	const i18n = getContext('i18n');
 
@@ -56,12 +60,13 @@
 		}
 	}
 
+	let system = '';
 	let info = {
 		id: '',
 		base_model_id: null,
 		name: '',
 		meta: {
-			profile_image_url: '/static/favicon.png',
+			profile_image_url: `${WEBUI_BASE_URL}/static/favicon.png`,
 			description: '',
 			suggestion_prompts: null,
 			tags: []
@@ -76,8 +81,12 @@
 	};
 	let capabilities = {
 		vision: true,
-		usage: undefined,
-		citations: true
+		file_upload: true,
+		web_search: true,
+		image_generation: true,
+		code_interpreter: true,
+		citations: true,
+		usage: undefined
 	};
 
 	let knowledge = [];
@@ -113,6 +122,8 @@
 		if (name === '') {
 			toast.error('Model Name is required.');
 		}
+
+		info.params = { ...info.params, ...params };
 
 		info.access_control = accessControl;
 		info.meta.capabilities = capabilities;
@@ -155,6 +166,7 @@
 			}
 		}
 
+		info.params.system = system.trim() === '' ? null : system;
 		info.params.stop = params.stop ? params.stop.split(',').filter((s) => s.trim()) : null;
 		Object.keys(info.params).forEach((key) => {
 			if (info.params[key] === '' || info.params[key] === null) {
@@ -171,7 +183,7 @@
 	onMount(async () => {
 		await tools.set(await getTools(localStorage.token));
 		await functions.set(await getFunctions(localStorage.token));
-		await knowledgeCollections.set(await getKnowledgeBases(localStorage.token));
+		await knowledgeCollections.set([...(await getKnowledgeBases(localStorage.token))]);
 
 		// Scroll to top 'workspace-container' element
 		const workspaceContainer = document.getElementById('workspace-container');
@@ -180,7 +192,6 @@
 		}
 
 		if (model) {
-			console.log(model);
 			name = model.name;
 			await tick();
 
@@ -201,6 +212,8 @@
 					model.base_model_id = null;
 				}
 			}
+
+			system = model?.params?.system ?? '';
 
 			params = { ...params, ...model?.params };
 			params.stop = params?.stop
@@ -364,11 +377,11 @@
 					submitHandler();
 				}}
 			>
-				<div class="self-center md:self-start flex justify-center my-2 flex-shrink-0">
+				<div class="self-center md:self-start flex justify-center my-2 shrink-0">
 					<div class="self-center">
 						<button
-							class="rounded-xl flex flex-shrink-0 items-center {info.meta.profile_image_url !==
-							'/static/favicon.png'
+							class="rounded-xl flex shrink-0 items-center {info.meta.profile_image_url !==
+							`${WEBUI_BASE_URL}/static/favicon.png`
 								? 'bg-transparent'
 								: 'bg-white'} shadow-xl group relative"
 							type="button"
@@ -384,7 +397,7 @@
 								/>
 							{:else}
 								<img
-									src="/static/favicon.png"
+									src="{WEBUI_BASE_URL}/static/favicon.png"
 									alt="model profile"
 									class=" rounded-xl size-72 md:size-60 object-cover shrink-0"
 								/>
@@ -420,7 +433,7 @@
 							<button
 								class="px-2 py-1 text-gray-500 rounded-lg text-xs"
 								on:click={() => {
-									info.meta.profile_image_url = '/static/favicon.png';
+									info.meta.profile_image_url = `${WEBUI_BASE_URL}/static/favicon.png`;
 								}}
 								type="button"
 							>
@@ -435,7 +448,7 @@
 						<div class="flex-1">
 							<div>
 								<input
-									class="text-3xl font-semibold w-full bg-transparent outline-none"
+									class="text-3xl font-semibold w-full bg-transparent outline-hidden"
 									placeholder={$i18n.t('Model Name')}
 									bind:value={name}
 									required
@@ -446,7 +459,7 @@
 						<div class="flex-1">
 							<div>
 								<input
-									class="text-xs w-full bg-transparent text-gray-500 outline-none"
+									class="text-xs w-full bg-transparent text-gray-500 outline-hidden"
 									placeholder={$i18n.t('Model ID')}
 									bind:value={id}
 									disabled={edit}
@@ -462,7 +475,7 @@
 
 							<div>
 								<select
-									class="text-sm w-full bg-transparent outline-none"
+									class="text-sm w-full bg-transparent outline-hidden"
 									placeholder="Select a base model (e.g. llama3, gpt-4o)"
 									bind:value={info.base_model_id}
 									on:change={(e) => {
@@ -486,8 +499,12 @@
 							<div class=" self-center text-sm font-semibold">{$i18n.t('Description')}</div>
 
 							<button
-								class="p-1 text-xs flex rounded transition"
+								class="p-1 text-xs flex rounded-sm transition"
 								type="button"
+								aria-pressed={enableDescription ? 'true' : 'false'}
+								aria-label={enableDescription
+									? $i18n.t('Custom description enabled')
+									: $i18n.t('Default description enabled')}
 								on:click={() => {
 									enableDescription = !enableDescription;
 								}}
@@ -502,7 +519,7 @@
 
 						{#if enableDescription}
 							<Textarea
-								className=" text-sm w-full bg-transparent outline-none resize-none overflow-y-hidden "
+								className=" text-sm w-full bg-transparent outline-hidden resize-none overflow-y-hidden "
 								placeholder={$i18n.t('Add a short description about what this model does')}
 								bind:value={info.meta.description}
 							/>
@@ -531,11 +548,15 @@
 
 					<div class="my-2">
 						<div class="px-3 py-2 bg-gray-50 dark:bg-gray-950 rounded-lg">
-							<AccessControl bind:accessControl accessRoles={['read', 'write']} />
+							<AccessControl
+								bind:accessControl
+								accessRoles={['read', 'write']}
+								allowPublic={$user?.permissions?.sharing?.public_models || $user?.role === 'admin'}
+							/>
 						</div>
 					</div>
 
-					<hr class=" border-gray-50 dark:border-gray-850 my-1.5" />
+					<hr class=" border-gray-100 dark:border-gray-850 my-1.5" />
 
 					<div class="my-2">
 						<div class="flex w-full justify-between">
@@ -547,10 +568,10 @@
 								<div class=" text-xs font-semibold mb-2">{$i18n.t('System Prompt')}</div>
 								<div>
 									<Textarea
-										className=" text-sm w-full bg-transparent outline-none resize-none overflow-y-hidden "
+										className=" text-sm w-full bg-transparent outline-hidden resize-none overflow-y-hidden "
 										placeholder={`Write your model system prompt content here\ne.g.) You are Mario from Super Mario Bros, acting as an assistant.`}
 										rows={4}
-										bind:value={info.params.system}
+										bind:value={system}
 									/>
 								</div>
 							</div>
@@ -561,7 +582,7 @@
 								</div>
 
 								<button
-									class="p-1 px-3 text-xs flex rounded transition"
+									class="p-1 px-3 text-xs flex rounded-sm transition"
 									type="button"
 									on:click={() => {
 										showAdvanced = !showAdvanced;
@@ -577,19 +598,13 @@
 
 							{#if showAdvanced}
 								<div class="my-2">
-									<AdvancedParams
-										admin={true}
-										bind:params
-										on:change={(e) => {
-											info.params = { ...info.params, ...params };
-										}}
-									/>
+									<AdvancedParams admin={true} custom={true} bind:params />
 								</div>
 							{/if}
 						</div>
 					</div>
 
-					<hr class=" border-gray-50 dark:border-gray-850 my-1" />
+					<hr class=" border-gray-100 dark:border-gray-850 my-1" />
 
 					<div class="my-2">
 						<div class="flex w-full justify-between items-center">
@@ -599,7 +614,7 @@
 								</div>
 
 								<button
-									class="p-1 text-xs flex rounded transition"
+									class="p-1 text-xs flex rounded-sm transition"
 									type="button"
 									on:click={() => {
 										if ((info?.meta?.suggestion_prompts ?? null) === null) {
@@ -619,7 +634,7 @@
 
 							{#if (info?.meta?.suggestion_prompts ?? null) !== null}
 								<button
-									class="p-1 px-2 text-xs flex rounded transition"
+									class="p-1 px-2 text-xs flex rounded-sm transition"
 									type="button"
 									on:click={() => {
 										if (
@@ -653,7 +668,7 @@
 									{#each info.meta.suggestion_prompts as prompt, promptIdx}
 										<div class=" flex rounded-lg">
 											<input
-												class=" text-sm w-full bg-transparent outline-none border-r border-gray-50 dark:border-gray-850"
+												class=" text-sm w-full bg-transparent outline-hidden border-r border-gray-100 dark:border-gray-850"
 												placeholder={$i18n.t('Write a prompt suggestion (e.g. Who are you?)')}
 												bind:value={prompt.content}
 											/>
@@ -666,16 +681,7 @@
 													info.meta.suggestion_prompts = info.meta.suggestion_prompts;
 												}}
 											>
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													viewBox="0 0 20 20"
-													fill="currentColor"
-													class="w-4 h-4"
-												>
-													<path
-														d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
-													/>
-												</svg>
+												<XMark className={'size-4'} />
 											</button>
 										</div>
 									{/each}
@@ -686,10 +692,10 @@
 						{/if}
 					</div>
 
-					<hr class=" border-gray-50 dark:border-gray-850 my-1.5" />
+					<hr class=" border-gray-100 dark:border-gray-850 my-1.5" />
 
 					<div class="my-2">
-						<Knowledge bind:selectedKnowledge={knowledge} collections={$knowledgeCollections} />
+						<Knowledge bind:selectedItems={knowledge} />
 					</div>
 
 					<div class="my-2">
@@ -719,7 +725,7 @@
 							<div class=" self-center text-sm font-semibold">{$i18n.t('JSON Preview')}</div>
 
 							<button
-								class="p-1 px-3 text-xs flex rounded transition"
+								class="p-1 px-3 text-xs flex rounded-sm transition"
 								type="button"
 								on:click={() => {
 									showPreview = !showPreview;
@@ -736,7 +742,7 @@
 						{#if showPreview}
 							<div>
 								<textarea
-									class="text-sm w-full bg-transparent outline-none resize-none"
+									class="text-sm w-full bg-transparent outline-hidden resize-none"
 									rows="10"
 									value={JSON.stringify(info, null, 2)}
 									disabled
@@ -764,29 +770,7 @@
 
 							{#if loading}
 								<div class="ml-1.5 self-center">
-									<svg
-										class=" w-4 h-4"
-										viewBox="0 0 24 24"
-										fill="currentColor"
-										xmlns="http://www.w3.org/2000/svg"
-										><style>
-											.spinner_ajPY {
-												transform-origin: center;
-												animation: spinner_AtaB 0.75s infinite linear;
-											}
-											@keyframes spinner_AtaB {
-												100% {
-													transform: rotate(360deg);
-												}
-											}
-										</style><path
-											d="M12,1A11,11,0,1,0,23,12,11,11,0,0,0,12,1Zm0,19a8,8,0,1,1,8-8A8,8,0,0,1,12,20Z"
-											opacity=".25"
-										/><path
-											d="M10.14,1.16a11,11,0,0,0-9,8.92A1.59,1.59,0,0,0,2.46,12,1.52,1.52,0,0,0,4.11,10.7a8,8,0,0,1,6.66-6.61A1.42,1.42,0,0,0,12,2.69h0A1.57,1.57,0,0,0,10.14,1.16Z"
-											class="spinner_ajPY"
-										/></svg
-									>
+									<Spinner />
 								</div>
 							{/if}
 						</button>

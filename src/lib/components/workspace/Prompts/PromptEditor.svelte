@@ -7,10 +7,14 @@
 	import AccessControl from '../common/AccessControl.svelte';
 	import LockClosed from '$lib/components/icons/LockClosed.svelte';
 	import AccessControlModal from '../common/AccessControlModal.svelte';
+	import { user } from '$lib/stores';
+	import { slugify } from '$lib/utils';
+	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	export let onSubmit: Function;
 	export let edit = false;
 	export let prompt = null;
+	export let clone = false;
 
 	const i18n = getContext('i18n');
 
@@ -20,12 +24,19 @@
 	let command = '';
 	let content = '';
 
-	let accessControl = null;
+	let accessControl = {};
 
 	let showAccessControlModal = false;
 
-	$: if (!edit) {
-		command = title !== '' ? `${title.replace(/\s+/g, '-').toLowerCase()}` : '';
+	let hasManualEdit = false;
+
+	$: if (!edit && !hasManualEdit) {
+		command = title !== '' ? slugify(title) : '';
+	}
+
+	// Track manual edits
+	function handleCommandInput(e: Event) {
+		hasManualEdit = true;
 	}
 
 	const submitHandler = async () => {
@@ -63,7 +74,7 @@
 			command = prompt.command.at(0) === '/' ? prompt.command.slice(1) : prompt.command;
 			content = prompt.content;
 
-			accessControl = prompt?.access_control ?? null;
+			accessControl = prompt?.access_control === undefined ? {} : prompt?.access_control;
 		}
 	});
 </script>
@@ -72,6 +83,7 @@
 	bind:show={showAccessControlModal}
 	bind:accessControl
 	accessRoles={['read', 'write']}
+	allowPublic={$user?.permissions?.sharing?.public_prompts || $user?.role === 'admin'}
 />
 
 <div class="w-full max-h-full flex justify-center">
@@ -94,13 +106,13 @@
 				<div class="flex flex-col w-full">
 					<div class="flex items-center">
 						<input
-							class="text-2xl font-semibold w-full bg-transparent outline-none"
+							class="text-2xl font-semibold w-full bg-transparent outline-hidden"
 							placeholder={$i18n.t('Title')}
 							bind:value={title}
 							required
 						/>
 
-						<div class="self-center flex-shrink-0">
+						<div class="self-center shrink-0">
 							<button
 								class="bg-gray-50 hover:bg-gray-100 text-black dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-white transition px-2 py-1 rounded-full flex gap-1 items-center"
 								type="button"
@@ -110,7 +122,7 @@
 							>
 								<LockClosed strokeWidth="2.5" className="size-3.5" />
 
-								<div class="text-sm font-medium flex-shrink-0">
+								<div class="text-sm font-medium shrink-0">
 									{$i18n.t('Access')}
 								</div>
 							</button>
@@ -120,9 +132,10 @@
 					<div class="flex gap-0.5 items-center text-xs text-gray-500">
 						<div class="">/</div>
 						<input
-							class=" w-full bg-transparent outline-none"
+							class=" w-full bg-transparent outline-hidden"
 							placeholder={$i18n.t('Command')}
 							bind:value={command}
+							on:input={handleCommandInput}
 							required
 							disabled={edit}
 						/>
@@ -139,7 +152,7 @@
 			<div class="mt-2">
 				<div>
 					<Textarea
-						className="text-sm w-full bg-transparent outline-none overflow-y-hidden resize-none"
+						className="text-sm w-full bg-transparent outline-hidden overflow-y-hidden resize-none"
 						placeholder={$i18n.t('Write a summary in 50 words that summarizes [topic or keyword].')}
 						bind:value={content}
 						rows={6}
@@ -179,29 +192,7 @@
 
 				{#if loading}
 					<div class="ml-1.5 self-center">
-						<svg
-							class=" w-4 h-4"
-							viewBox="0 0 24 24"
-							fill="currentColor"
-							xmlns="http://www.w3.org/2000/svg"
-							><style>
-								.spinner_ajPY {
-									transform-origin: center;
-									animation: spinner_AtaB 0.75s infinite linear;
-								}
-								@keyframes spinner_AtaB {
-									100% {
-										transform: rotate(360deg);
-									}
-								}
-							</style><path
-								d="M12,1A11,11,0,1,0,23,12,11,11,0,0,0,12,1Zm0,19a8,8,0,1,1,8-8A8,8,0,0,1,12,20Z"
-								opacity=".25"
-							/><path
-								d="M10.14,1.16a11,11,0,0,0-9,8.92A1.59,1.59,0,0,0,2.46,12,1.52,1.52,0,0,0,4.11,10.7a8,8,0,0,1,6.66-6.61A1.42,1.42,0,0,0,12,2.69h0A1.57,1.57,0,0,0,10.14,1.16Z"
-								class="spinner_ajPY"
-							/></svg
-						>
+						<Spinner />
 					</div>
 				{/if}
 			</button>
