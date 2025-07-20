@@ -5,6 +5,7 @@
 	import emojiShortCodes from '$lib/emoji-shortcodes.json';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import VirtualList from '@sveltejs/svelte-virtual-list';
+	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	export let onClose = () => {};
 	export let onSubmit = (name) => {};
@@ -107,7 +108,7 @@
 		<slot />
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Content
-		class="max-w-full w-80 bg-gray-50 dark:bg-gray-850 rounded-lg z-[9999] shadow-lg dark:text-white"
+		class="max-w-full w-80 bg-gray-50 dark:bg-gray-850 rounded-lg z-9999 shadow-lg dark:text-white"
 		sideOffset={8}
 		{side}
 		{align}
@@ -116,7 +117,7 @@
 		<div class="mb-1 px-3 pt-2 pb-2">
 			<input
 				type="text"
-				class="w-full text-sm bg-transparent outline-none"
+				class="w-full text-sm bg-transparent outline-hidden"
 				placeholder="Search all emojis"
 				bind:value={search}
 			/>
@@ -147,7 +148,7 @@
 												on:click={() => selectEmoji(emojiItem)}
 											>
 												<img
-													src="/assets/emojis/{emojiItem.name.toLowerCase()}.svg"
+													src="{WEBUI_BASE_URL}/assets/emojis/{emojiItem.name.toLowerCase()}.svg"
 													alt={emojiItem.name}
 													class="size-5"
 													loading="lazy"
