@@ -40,10 +40,14 @@ router = APIRouter()
 
 @router.get("/", response_model=list[ChannelModel])
 async def get_channels(user=Depends(get_verified_user)):
+    return Channels.get_channels_by_user_id(user.id)
+
+
+@router.get("/list", response_model=list[ChannelModel])
+async def get_all_channels(user=Depends(get_verified_user)):
     if user.role == "admin":
         return Channels.get_channels()
-    else:
-        return Channels.get_channels_by_user_id(user.id)
+    return Channels.get_channels_by_user_id(user.id)
 
 
 ############################
@@ -192,7 +196,7 @@ async def get_channel_messages(
 ############################
 
 
-async def send_notification(webui_url, channel, message, active_user_ids):
+async def send_notification(name, webui_url, channel, message, active_user_ids):
     users = get_users_with_access("read", channel.access_control)
 
     for user in users:
@@ -205,7 +209,8 @@ async def send_notification(webui_url, channel, message, active_user_ids):
                 )
 
                 if webhook_url:
-                    post_webhook(
+                    await post_webhook(
+                        name,
                         webhook_url,
                         f"#{channel.name} - {webui_url}/channels/{channel.id}\n\n{message.content}",
                         {
@@ -302,6 +307,7 @@ async def post_new_message(
 
             background_tasks.add_task(
                 send_notification,
+                request.app.state.WEBUI_NAME,
                 request.app.state.config.WEBUI_URL,
                 channel,
                 message,
@@ -428,13 +434,6 @@ async def update_message_by_id(
             status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND
         )
 
-    if user.role != "admin" and not has_access(
-        user.id, type="read", access_control=channel.access_control
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT()
-        )
-
     message = Messages.get_message_by_id(message_id)
     if not message:
         raise HTTPException(
@@ -444,6 +443,15 @@ async def update_message_by_id(
     if message.channel_id != id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.DEFAULT()
+        )
+
+    if (
+        user.role != "admin"
+        and message.user_id != user.id
+        and not has_access(user.id, type="read", access_control=channel.access_control)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT()
         )
 
     try:
@@ -635,13 +643,6 @@ async def delete_message_by_id(
             status_code=status.HTTP_404_NOT_FOUND, detail=ERROR_MESSAGES.NOT_FOUND
         )
 
-    if user.role != "admin" and not has_access(
-        user.id, type="read", access_control=channel.access_control
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT()
-        )
-
     message = Messages.get_message_by_id(message_id)
     if not message:
         raise HTTPException(
@@ -651,6 +652,15 @@ async def delete_message_by_id(
     if message.channel_id != id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.DEFAULT()
+        )
+
+    if (
+        user.role != "admin"
+        and message.user_id != user.id
+        and not has_access(user.id, type="read", access_control=channel.access_control)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.DEFAULT()
         )
 
     try:
