@@ -28,11 +28,12 @@
 	import Image from '$lib/components/common/Image.svelte';
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import ProfilePreview from './Message/ProfilePreview.svelte';
-	import ChatBubbleOvalEllipsis from '$lib/components/icons/ChatBubbleOvalEllipsis.svelte';
+	import ChatBubbleOvalEllipsis from '$lib/components/icons/ChatBubble.svelte';
 	import FaceSmile from '$lib/components/icons/FaceSmile.svelte';
-	import ReactionPicker from './Message/ReactionPicker.svelte';
+	import EmojiPicker from '$lib/components/common/EmojiPicker.svelte';
 	import ChevronRight from '$lib/components/icons/ChevronRight.svelte';
 	import { formatDate } from '$lib/utils';
+	import Emoji from '$lib/components/common/Emoji.svelte';
 
 	export let message;
 	export let showUserProfile = true;
@@ -72,9 +73,9 @@
 				class=" absolute {showButtons ? '' : 'invisible group-hover:visible'} right-1 -top-2 z-10"
 			>
 				<div
-					class="flex gap-1 rounded-lg bg-white dark:bg-gray-850 shadow-md p-0.5 border border-gray-100 dark:border-gray-800"
+					class="flex gap-1 rounded-lg bg-white dark:bg-gray-850 shadow-md p-0.5 border border-gray-100 dark:border-gray-850"
 				>
-					<ReactionPicker
+					<EmojiPicker
 						onClose={() => (showButtons = false)}
 						onSubmit={(name) => {
 							showButtons = false;
@@ -91,7 +92,7 @@
 								<FaceSmile />
 							</button>
 						</Tooltip>
-					</ReactionPicker>
+					</EmojiPicker>
 
 					{#if !thread}
 						<Tooltip content={$i18n.t('Reply in Thread')}>
@@ -106,7 +107,7 @@
 						</Tooltip>
 					{/if}
 
-					{#if message.user_id === $user.id || $user.role === 'admin'}
+					{#if message.user_id === $user?.id || $user?.role === 'admin'}
 						<Tooltip content={$i18n.t('Edit')}>
 							<button
 								class="hover:bg-gray-100 dark:hover:bg-gray-800 transition rounded-lg p-1"
@@ -138,13 +139,15 @@
 			dir={$settings.chatDirection}
 		>
 			<div
-				class={`flex-shrink-0 ${($settings?.chatDirection ?? 'LTR') === 'LTR' ? 'mr-3' : 'ml-3'} w-9`}
+				class={`shrink-0 ${($settings?.chatDirection ?? 'LTR') === 'LTR' ? 'mr-3' : 'ml-3'} w-9`}
 			>
 				{#if showUserProfile}
 					<ProfilePreview user={message.user}>
 						<ProfileImage
 							src={message.user?.profile_image_url ??
-								($i18n.language === 'dg-DG' ? `/doge.png` : `${WEBUI_BASE_URL}/static/favicon.png`)}
+								($i18n.language === 'dg-DG'
+									? `${WEBUI_BASE_URL}/doge.png`
+									: `${WEBUI_BASE_URL}/static/favicon.png`)}
 							className={'size-8 translate-y-1 ml-0.5'}
 						/>
 					</ProfilePreview>
@@ -153,7 +156,7 @@
 
 					{#if message.created_at}
 						<div
-							class="mt-1.5 flex flex-shrink-0 items-center text-xs self-center invisible group-hover:visible text-gray-500 font-medium first-letter:capitalize"
+							class="mt-1.5 flex shrink-0 items-center text-xs self-center invisible group-hover:visible text-gray-500 font-medium first-letter:capitalize"
 						>
 							<Tooltip content={dayjs(message.created_at / 1000000).format('LLLL')}>
 								{dayjs(message.created_at / 1000000).format('HH:mm')}
@@ -206,7 +209,7 @@
 				{#if edit}
 					<div class="py-2">
 						<Textarea
-							className=" bg-transparent outline-none w-full resize-none"
+							className=" bg-transparent outline-hidden w-full resize-none"
 							bind:value={editedContent}
 							onKeydown={(e) => {
 								if (e.key === 'Escape') {
@@ -265,7 +268,7 @@
 									<Tooltip content={`:${reaction.name}:`}>
 										<button
 											class="flex items-center gap-1.5 transition rounded-xl px-2 py-1 cursor-pointer {reaction.user_ids.includes(
-												$user.id
+												$user?.id
 											)
 												? ' bg-blue-300/10 outline outline-blue-500/50 outline-1'
 												: 'bg-gray-300/10 dark:bg-gray-500/10 hover:outline hover:outline-gray-700/30 dark:hover:outline-gray-300/30 hover:outline-1'}"
@@ -273,20 +276,7 @@
 												onReaction(reaction.name);
 											}}
 										>
-											{#if $shortCodesToEmojis[reaction.name]}
-												<img
-													src="/assets/emojis/{$shortCodesToEmojis[
-														reaction.name
-													].toLowerCase()}.svg"
-													alt={reaction.name}
-													class=" size-4"
-													loading="lazy"
-												/>
-											{:else}
-												<div>
-													{reaction.name}
-												</div>
-											{/if}
+											<Emoji shortCode={reaction.name} />
 
 											{#if reaction.user_ids.length > 0}
 												<div class="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -297,7 +287,7 @@
 									</Tooltip>
 								{/each}
 
-								<ReactionPicker
+								<EmojiPicker
 									onSubmit={(name) => {
 										onReaction(name);
 									}}
@@ -309,7 +299,7 @@
 											<FaceSmile />
 										</div>
 									</Tooltip>
-								</ReactionPicker>
+								</EmojiPicker>
 							</div>
 						</div>
 					{/if}
