@@ -13,16 +13,38 @@
 	export let onChange: Function = () => {};
 
 	export let accessRoles = ['read'];
-	export let accessControl = null;
+	export let accessControl = {};
+
+	export let allowPublic = true;
 
 	let selectedGroupId = '';
 	let groups = [];
+
+	$: if (!allowPublic && accessControl === null) {
+		initPublicAccess();
+	}
+
+	const initPublicAccess = () => {
+		if (!allowPublic && accessControl === null) {
+			accessControl = {
+				read: {
+					group_ids: [],
+					user_ids: []
+				},
+				write: {
+					group_ids: [],
+					user_ids: []
+				}
+			};
+			onChange(accessControl);
+		}
+	};
 
 	onMount(async () => {
 		groups = await getGroups(localStorage.token);
 
 		if (accessControl === null) {
-			accessControl = null;
+			initPublicAccess();
 		} else {
 			accessControl = {
 				read: {
@@ -36,25 +58,11 @@
 			};
 		}
 	});
-
-	$: onChange(accessControl);
-
-	$: if (selectedGroupId) {
-		onSelectGroup();
-	}
-
-	const onSelectGroup = () => {
-		if (selectedGroupId !== '') {
-			accessControl.read.group_ids = [...accessControl.read.group_ids, selectedGroupId];
-
-			selectedGroupId = '';
-		}
-	};
 </script>
 
 <div class=" rounded-lg flex flex-col gap-2">
 	<div class="">
-		<div class=" text-sm font-semibold mb-1">{$i18n.t('Visibility')}</div>
+		<div class=" text-sm font-semibold mb-1.5">{$i18n.t('Visibility')}</div>
 
 		<div class="flex gap-2.5 items-center mb-1">
 			<div>
@@ -96,7 +104,7 @@
 			<div>
 				<select
 					id="models"
-					class="outline-none bg-transparent text-sm font-medium rounded-lg block w-fit pr-10 max-w-full placeholder-gray-400"
+					class="outline-hidden bg-transparent text-sm font-medium rounded-lg block w-fit pr-10 max-w-full placeholder-gray-400"
 					value={accessControl !== null ? 'private' : 'public'}
 					on:change={(e) => {
 						if (e.target.value === 'public') {
@@ -104,17 +112,22 @@
 						} else {
 							accessControl = {
 								read: {
-									group_ids: []
+									group_ids: [],
+									user_ids: []
 								},
 								write: {
-									group_ids: []
+									group_ids: [],
+									user_ids: []
 								}
 							};
 						}
+						onChange(accessControl);
 					}}
 				>
-					<option class=" text-gray-700" value="private" selected>Private</option>
-					<option class=" text-gray-700" value="public" selected>Public</option>
+					<option class=" text-gray-700" value="private" selected>{$i18n.t('Private')}</option>
+					{#if allowPublic}
+						<option class=" text-gray-700" value="public" selected>{$i18n.t('Public')}</option>
+					{/if}
 				</select>
 
 				<div class=" text-xs text-gray-400 font-medium">
@@ -129,7 +142,7 @@
 	</div>
 	{#if accessControl !== null}
 		{@const accessGroups = groups.filter((group) =>
-			accessControl.read.group_ids.includes(group.id)
+			(accessControl?.read?.group_ids ?? []).includes(group.id)
 		)}
 		<div>
 			<div class="">
@@ -144,15 +157,26 @@
 						<div class="flex flex-1 items-center">
 							<div class="w-full px-0.5">
 								<select
-									class="outline-none bg-transparent text-sm rounded-lg block w-full pr-10 max-w-full
+									class="outline-hidden bg-transparent text-sm rounded-lg block w-full pr-10 max-w-full
 									{selectedGroupId ? '' : 'text-gray-500'}
 									dark:placeholder-gray-500"
 									bind:value={selectedGroupId}
+									on:change={() => {
+										if (selectedGroupId !== '') {
+											accessControl.read.group_ids = [
+												...(accessControl?.read?.group_ids ?? []),
+												selectedGroupId
+											];
+
+											selectedGroupId = '';
+											onChange(accessControl);
+										}
+									}}
 								>
 									<option class=" text-gray-700" value="" disabled selected
 										>{$i18n.t('Select a group')}</option
 									>
-									{#each groups.filter((group) => !accessControl.read.group_ids.includes(group.id)) as group}
+									{#each groups.filter((group) => !(accessControl?.read?.group_ids ?? []).includes(group.id)) as group}
 										<option class=" text-gray-700" value={group.id}>{group.name}</option>
 									{/each}
 								</select>
@@ -194,20 +218,21 @@
 										type="button"
 										on:click={() => {
 											if (accessRoles.includes('write')) {
-												if (accessControl.write.group_ids.includes(group.id)) {
-													accessControl.write.group_ids = accessControl.write.group_ids.filter(
-														(group_id) => group_id !== group.id
-													);
+												if ((accessControl?.write?.group_ids ?? []).includes(group.id)) {
+													accessControl.write.group_ids = (
+														accessControl?.write?.group_ids ?? []
+													).filter((group_id) => group_id !== group.id);
 												} else {
 													accessControl.write.group_ids = [
-														...accessControl.write.group_ids,
+														...(accessControl?.write?.group_ids ?? []),
 														group.id
 													];
 												}
+												onChange(accessControl);
 											}
 										}}
 									>
-										{#if accessControl.write.group_ids.includes(group.id)}
+										{#if (accessControl?.write?.group_ids ?? []).includes(group.id)}
 											<Badge type={'success'} content={$i18n.t('Write')} />
 										{:else}
 											<Badge type={'info'} content={$i18n.t('Read')} />
@@ -218,9 +243,13 @@
 										class=" rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-850 transition"
 										type="button"
 										on:click={() => {
-											accessControl.read.group_ids = accessControl.read.group_ids.filter(
+											accessControl.read.group_ids = (accessControl?.read?.group_ids ?? []).filter(
 												(id) => id !== group.id
 											);
+											accessControl.write.group_ids = (
+												accessControl?.write?.group_ids ?? []
+											).filter((id) => id !== group.id);
+											onChange(accessControl);
 										}}
 									>
 										<XMark />
