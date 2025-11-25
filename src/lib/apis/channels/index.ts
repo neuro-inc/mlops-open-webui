@@ -1,5 +1,4 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
-import { t } from 'i18next';
 
 type ChannelForm = {
 	name: string;
@@ -29,7 +28,7 @@ export const createNewChannel = async (token: string = '', channel: ChannelForm)
 		})
 		.catch((err) => {
 			error = err.detail;
-			console.log(err);
+			console.error(err);
 			return null;
 		});
 
@@ -60,7 +59,7 @@ export const getChannels = async (token: string = '') => {
 		})
 		.catch((err) => {
 			error = err.detail;
-			console.log(err);
+			console.error(err);
 			return null;
 		});
 
@@ -91,7 +90,61 @@ export const getChannelById = async (token: string = '', channel_id: string) => 
 		})
 		.catch((err) => {
 			error = err.detail;
-			console.log(err);
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const getChannelUsersById = async (
+	token: string,
+	channel_id: string,
+	query?: string,
+	orderBy?: string,
+	direction?: string,
+	page = 1
+) => {
+	let error = null;
+	let res = null;
+
+	const searchParams = new URLSearchParams();
+
+	searchParams.set('page', `${page}`);
+
+	if (query) {
+		searchParams.set('query', query);
+	}
+
+	if (orderBy) {
+		searchParams.set('order_by', orderBy);
+	}
+
+	if (direction) {
+		searchParams.set('direction', direction);
+	}
+
+	res = await fetch(
+		`${WEBUI_API_BASE_URL}/channels/${channel_id}/users?${searchParams.toString()}`,
+		{
+			method: 'GET',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${token}`
+			}
+		}
+	)
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			console.error(err);
+			error = err.detail;
 			return null;
 		});
 
@@ -127,7 +180,7 @@ export const updateChannelById = async (
 		})
 		.catch((err) => {
 			error = err.detail;
-			console.log(err);
+			console.error(err);
 			return null;
 		});
 
@@ -158,7 +211,7 @@ export const deleteChannelById = async (token: string = '', channel_id: string) 
 		})
 		.catch((err) => {
 			error = err.detail;
-			console.log(err);
+			console.error(err);
 			return null;
 		});
 
@@ -197,7 +250,7 @@ export const getChannelMessages = async (
 		})
 		.catch((err) => {
 			error = err.detail;
-			console.log(err);
+			console.error(err);
 			return null;
 		});
 
@@ -237,7 +290,7 @@ export const getChannelThreadMessages = async (
 		})
 		.catch((err) => {
 			error = err.detail;
-			console.log(err);
+			console.error(err);
 			return null;
 		});
 
@@ -249,6 +302,7 @@ export const getChannelThreadMessages = async (
 };
 
 type MessageForm = {
+	reply_to_id?: string;
 	parent_id?: string;
 	content: string;
 	data?: object;
@@ -276,7 +330,7 @@ export const sendMessage = async (token: string = '', channel_id: string, messag
 		})
 		.catch((err) => {
 			error = err.detail;
-			console.log(err);
+			console.error(err);
 			return null;
 		});
 
@@ -316,7 +370,7 @@ export const updateMessage = async (
 		})
 		.catch((err) => {
 			error = err.detail;
-			console.log(err);
+			console.error(err);
 			return null;
 		});
 
@@ -356,7 +410,7 @@ export const addReaction = async (
 		})
 		.catch((err) => {
 			error = err.detail;
-			console.log(err);
+			console.error(err);
 			return null;
 		});
 
@@ -396,7 +450,7 @@ export const removeReaction = async (
 		})
 		.catch((err) => {
 			error = err.detail;
-			console.log(err);
+			console.error(err);
 			return null;
 		});
 
@@ -430,7 +484,7 @@ export const deleteMessage = async (token: string = '', channel_id: string, mess
 		})
 		.catch((err) => {
 			error = err.detail;
-			console.log(err);
+			console.error(err);
 			return null;
 		});
 
