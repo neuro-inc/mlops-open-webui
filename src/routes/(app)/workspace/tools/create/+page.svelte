@@ -87,10 +87,10 @@
 			name={tool?.name ?? ''}
 			meta={tool?.meta ?? { description: '' }}
 			content={tool?.content ?? ''}
-			access_control={null}
+			accessControl={tool?.access_control !== undefined ? tool.access_control : {}}
 			{clone}
-			on:save={(e) => {
-				saveHandler(e.detail);
+			onSave={(value) => {
+				saveHandler(value);
 			}}
 		/>
 	{/key}
